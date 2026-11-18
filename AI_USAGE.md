@@ -3,6 +3,7 @@
 ## Tools
 - **Claude (Anthropic), agentic mode with access to my repo folder**: generated most code, tests and documents from my design decisions; I reviewed each change, ran `mvn test` locally after every batch and pushed.
 - **Redocly CLI** (not AI) to independently validate `docs/api/openapi.yaml`.
+- **A second AI tool as an independent reviewer** of the finished repo against the brief, run in a separate copy of the repo: it re-ran the tests and wrote probes for gaps.
 
 ## How I drove it
 I owned the decisions; the AI typed. Key prompts and instructions, paraphrased:
@@ -23,6 +24,10 @@ I owned the decisions; the AI typed. Key prompts and instructions, paraphrased:
 | Testcontainers failed with an empty HTTP 400 from Docker Desktop | `mvn test -Pintegration` on my laptop | Docker Engine 29 rejects the old default API version; pinned `api.version=1.44` in the integration profile |
 | First request after startup was always scored degraded: the Redis connection was opened lazily inside the 25 ms feature budget | The real-Redis integration test's "normal" step came back `degraded: true` | `RedisFeatureStore.warmUp()` connects and preloads the Lua script at startup (logs and carries on if Redis is down) |
 | Circuit breaker settings proposed by the AI (window 20, min 10 calls, open 2 s) looked reasonable but opened on 1.4% laptop jitter and degraded 90% of a healthy perf run | Perf run showed 5,376 degraded responses; I captured the service log and counted reasons: 5,554 `CIRCUIT_OPEN` vs 86 real timeouts | Retuned to window 100 / min 50 / open 1 s and documented in ADR 0004 and [perf-results.md](docs/architecture/perf-results.md); residual 29% and next steps reported honestly |
+| Concurrent duplicates were stored once but **scored** up to N times; a concurrent conflicting payload polluted velocity history | Independent review reproduced 10 evaluations for 10 simultaneous copies | Claim row before scoring (ADR 0002 option D); test now asserts exactly one `RuleEngine.evaluate` and no feature write by a losing conflicting request |
+| Capacity maths: 2 AZs × 5 instances cannot carry 6,000 TPS after losing an AZ (5,000 left) | Independent review | 3 AZs × 4 = 12 instances; pool and connection totals recomputed |
+| Docs overstated PostgreSQL protection (pool timeout 250 ms is above the 80 ms budget) | Independent review | Docs corrected; added 50 ms `statement_timeout`; deadline-derived DB timeout listed as not yet covered |
+| Zero-length velocity windows accepted; a future-dated transaction could prune current history | Independent review probes | Config validation (PT1S to P7D) and 400 `TIMESTAMP_IN_FUTURE` beyond 5 min skew, with tests |
 | Integration test was first named `*IT`, which Surefire does not run (Failsafe does) | Review of the Maven setup | Renamed to `RedisDegradationIntegrationTest`, still excluded from `mvn test` by its JUnit tag |
 
 ## What I verified myself
