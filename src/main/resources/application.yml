@@ -15,6 +15,12 @@ spring:
       connection-timeout: 250
   flyway:
     enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 100ms         # backstop only; the per-request deadline is enforced in ResilientFeatureClient
+      connect-timeout: 200ms
 
 server:
   port: 8080
@@ -23,12 +29,28 @@ server:
 bulkhead:
   tenants:
     config-dir: config/tenants   # one YAML rule pack per bank; file name = tenant id
+  features:
+    store: memory                # memory | redis
+    fault-delay-ms: 0            # >0 adds artificial latency to every lookup (perf degraded mode)
+    breaker:
+      failure-rate-threshold: 50 # percent of failed/timed-out calls that opens the breaker
+      minimum-calls: 10
+      sliding-window-size: 20
+      wait-in-open-ms: 2000      # then half-open: a few probe calls decide whether to close
+      half-open-calls: 3
+  deadline:
+    budget-ms: 60                # internal budget inside the 80 ms p99 at the HTTP boundary
+    reserve-ms: 15               # kept back for rule evaluation + persistence
+    max-feature-timeout-ms: 25   # a feature lookup never gets more than this
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info,metrics
+  health:
+    redis:
+      enabled: false             # enabled in the postgres-redis profile
 
 logging:
   level:

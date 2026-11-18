@@ -1,6 +1,15 @@
-# Real system of record, as started by docker-compose.yml.
+# Real system of record and feature store, as started by docker-compose.yml.
 spring:
   datasource:
     url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5433}/${POSTGRES_DB:bulkhead}
     username: ${POSTGRES_USER:bulkhead}
     password: ${POSTGRES_PASSWORD}
+
+bulkhead:
+  features:
+    store: redis
+
+management:
+  health:
+    redis:
+      enabled: true
