@@ -1,9 +1,13 @@
 package com.azentio.bulkhead.features;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -21,6 +25,7 @@ import java.util.Objects;
  */
 public class RedisFeatureStore implements FeatureStore {
 
+    private static final Logger log = LoggerFactory.getLogger(RedisFeatureStore.class);
     static final Duration BENEFICIARY_MEMORY = Duration.ofDays(90);
 
     @SuppressWarnings("rawtypes")
@@ -43,6 +48,24 @@ public class RedisFeatureStore implements FeatureStore {
 
     static String beneficiaryKey(String tenantId, String accountToken) {
         return "bh:{" + tenantId + ":" + accountToken + "}:ben";
+    }
+
+    /**
+     * Opens the connection and loads the script at startup, so the first live request does not pay the
+     * TCP/handshake and NOSCRIPT round trips inside its 25 ms feature budget. Never fails startup:
+     * if Redis is down, scoring runs degraded until it is back.
+     */
+    public void warmUp() {
+        try {
+            redis.execute((RedisCallback<Object>) connection -> {
+                connection.ping();
+                connection.scriptingCommands().scriptLoad(SCRIPT.getScriptAsString().getBytes(StandardCharsets.UTF_8));
+                return null;
+            });
+            log.info("Redis feature store connected; velocity script loaded");
+        } catch (RuntimeException e) {
+            log.warn("Redis not reachable at startup, scoring will run degraded until it is: {}", e.getMessage());
+        }
     }
 
     @Override

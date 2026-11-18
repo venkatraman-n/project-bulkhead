@@ -12,9 +12,14 @@ public class FeatureStoreConfig {
 
     @Bean
     FeatureStore featureStore(FeatureProperties properties, ObjectProvider<StringRedisTemplate> redis) {
-        FeatureStore store = "redis".equalsIgnoreCase(properties.store())
-                ? new RedisFeatureStore(redis.getObject())
-                : new InMemoryFeatureStore();
+        FeatureStore store;
+        if ("redis".equalsIgnoreCase(properties.store())) {
+            RedisFeatureStore redisStore = new RedisFeatureStore(redis.getObject());
+            redisStore.warmUp();
+            store = redisStore;
+        } else {
+            store = new InMemoryFeatureStore();
+        }
         return properties.faultDelayMs() > 0
                 ? new DelayingFeatureStore(store, Duration.ofMillis(properties.faultDelayMs()))
                 : store;

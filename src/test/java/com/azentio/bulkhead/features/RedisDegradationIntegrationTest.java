@@ -75,6 +75,7 @@ class RedisDegradationIntegrationTest {
 
     @Test
     void normal_thenDegradedWhileRedisIsPaused_thenRecovers() throws Exception {
+        screen(payment()); // first request through MockMvc pays JIT/class-loading cost; not part of the assertion
         screen(payment()).andExpect(jsonPath("$.degraded").value(false));
 
         var docker = REDIS.getDockerClient();
