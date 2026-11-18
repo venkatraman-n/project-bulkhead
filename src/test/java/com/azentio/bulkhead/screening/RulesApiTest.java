@@ -55,7 +55,7 @@ class RulesApiTest {
     @Test
     void velocity_firesWhenAccountExceedsCountInWindow_andBanksUseTheirOwnWindows() throws Exception {
         String account = "acct-" + UUID.randomUUID();
-        Instant start = Instant.parse("2026-11-18T07:00:00Z");
+        Instant start = Instant.parse("2026-11-17T07:00:00Z");
         // bank-c: VELOCITY_5M fires above 3 transactions in 5 minutes.
         for (int i = 0; i < 3; i++) {
             screen("bank-c", payment().account(account).at(start.plusSeconds(i * 30L)))
@@ -72,6 +72,14 @@ class RulesApiTest {
         }
         screen("bank-a", payment().account(account).at(start.plusSeconds(60)))
                 .andExpect(jsonPath("$.reasonCodes").value(hasItem("VELOCITY_10M")));
+    }
+
+    @Test
+    void futureDatedTransaction_isRejected_soItCannotPruneCurrentVelocityHistory() throws Exception {
+        mvc.perform(post("/v1/tenants/bank-a/screenings").contentType(MediaType.APPLICATION_JSON)
+                        .content(payment().at(Instant.now().plusSeconds(86_400)).json()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("TIMESTAMP_IN_FUTURE"));
     }
 
     @Test

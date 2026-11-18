@@ -1,7 +1,7 @@
 # Real system of record and feature store, as started by docker-compose.yml.
 spring:
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5433}/${POSTGRES_DB:bulkhead}
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5433}/${POSTGRES_DB:bulkhead}?options=-c%20statement_timeout=50   # a stuck statement fails in 50 ms instead of holding the request
     username: ${POSTGRES_USER:bulkhead}
     password: ${POSTGRES_PASSWORD}
 

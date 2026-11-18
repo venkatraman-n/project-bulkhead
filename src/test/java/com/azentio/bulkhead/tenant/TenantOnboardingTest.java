@@ -48,6 +48,17 @@ class TenantOnboardingTest {
             bands: { reviewFrom: 80, declineFrom: 40 }
             """;
 
+    private static final String ZERO_WINDOW = """
+            rulePackVersion: "bank-w-zero-window"
+            rules:
+              amountThreshold: { threshold: 100, score: 40 }
+              highRiskCountry: { countries: [IR], score: 60 }
+              newBeneficiaryHighAmount: { amount: 100, score: 40 }
+              velocity:
+                - { id: VELOCITY_ZERO, window: PT0S, maxCount: 2, score: 50 }
+            bands: { reviewFrom: 40, declineFrom: 90 }
+            """;
+
     @DynamicPropertySource
     static void tenantDir(DynamicPropertyRegistry registry) {
         registry.add("bulkhead.tenants.config-dir", TenantOnboardingTest::configDirWithNewBanks);
@@ -81,6 +92,14 @@ class TenantOnboardingTest {
                 .andExpect(jsonPath("$.code").value("TENANT_CONFIG_INVALID"));
     }
 
+    @Test
+    void zeroLengthVelocityWindow_isRejectedAsInvalidConfig() throws Exception {
+        mvc.perform(post("/v1/tenants/bank-w/screenings").contentType(MediaType.APPLICATION_JSON)
+                        .content(payment().json()))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("TENANT_CONFIG_INVALID"));
+    }
+
     private static String configDirWithNewBanks() {
         try {
             Path dir = Files.createTempDirectory("tenants");
@@ -91,6 +110,7 @@ class TenantOnboardingTest {
             }
             Files.writeString(dir.resolve("bank-d.yaml"), BANK_D);
             Files.writeString(dir.resolve("bank-x.yaml"), BROKEN);
+            Files.writeString(dir.resolve("bank-w.yaml"), ZERO_WINDOW);
             return dir.toString();
         } catch (IOException e) {
             throw new UncheckedIOException(e);

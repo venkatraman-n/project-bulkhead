@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -31,6 +32,8 @@ public class TenantRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(TenantRegistry.class);
     static final Pattern TENANT_ID = Pattern.compile("[a-z0-9][a-z0-9-]{0,31}");
+    /** Longest velocity window a bank may configure; bounds Redis memory (docs/architecture/nfr.md section 2.4). */
+    static final Duration MAX_WINDOW = Duration.ofDays(7);
 
     private final Map<String, TenantConfig> tenants;
     private final Map<String, String> invalidTenants;
@@ -102,6 +105,11 @@ public class TenantRegistry {
         var degradation = config.degradation();
         if (degradation.policy() != TenantConfig.DegradationPolicy.Mode.FAIL_OPEN && degradation.amount() == null) {
             return "degradation.amount is required for " + degradation.policy();
+        }
+        for (TenantConfig.Velocity velocity : config.rules().velocity()) {
+            if (velocity.window().isNegative() || velocity.window().isZero() || velocity.window().compareTo(MAX_WINDOW) > 0) {
+                return "velocity " + velocity.id() + " window must be between PT1S and " + MAX_WINDOW;
+            }
         }
         long distinctIds = config.rules().velocity().stream().map(TenantConfig.Velocity::id).distinct().count();
         if (distinctIds != config.rules().velocity().size()) {
