@@ -4,12 +4,14 @@ import com.azentio.bulkhead.screening.rules.RuleResult;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -69,6 +71,48 @@ public class ScreeningRepository {
                 .param("version", s.rulePackVersion())
                 .param("evalMs", s.evaluationMs())
                 .param("createdAt", Timestamp.from(s.createdAt()))
+                .update();
+    }
+
+    /**
+     * Takes ownership of scoring this transaction. Runs in its own auto-committed statement, so the claim is
+     * visible to every instance immediately. A claim older than staleBefore (owner crashed mid-request) can be
+     * taken over.
+     *
+     * @return true if this caller owns the transaction and must score it
+     */
+    public boolean tryClaim(String tenantId, String transactionId, String payloadHash, Instant now, Instant staleBefore) {
+        try {
+            jdbc.sql("""
+                            INSERT INTO screening_claim (tenant_id, transaction_id, payload_hash, claimed_at)
+                            VALUES (:tenant, :txn, :hash, :now)
+                            """)
+                    .param("tenant", tenantId).param("txn", transactionId).param("hash", payloadHash)
+                    .param("now", Timestamp.from(now))
+                    .update();
+            return true;
+        } catch (DuplicateKeyException alreadyClaimed) {
+            return jdbc.sql("""
+                            UPDATE screening_claim SET payload_hash = :hash, claimed_at = :now
+                            WHERE tenant_id = :tenant AND transaction_id = :txn AND claimed_at < :staleBefore
+                            """)
+                    .param("tenant", tenantId).param("txn", transactionId).param("hash", payloadHash)
+                    .param("now", Timestamp.from(now)).param("staleBefore", Timestamp.from(staleBefore))
+                    .update() == 1;
+        }
+    }
+
+    public Optional<String> findClaimHash(String tenantId, String transactionId) {
+        return jdbc.sql("SELECT payload_hash FROM screening_claim WHERE tenant_id = :tenant AND transaction_id = :txn")
+                .param("tenant", tenantId).param("txn", transactionId)
+                .query(String.class)
+                .optional();
+    }
+
+    /** Owner failed before committing a decision: free the claim so the switch's retry can score. */
+    public void releaseClaim(String tenantId, String transactionId, String payloadHash) {
+        jdbc.sql("DELETE FROM screening_claim WHERE tenant_id = :tenant AND transaction_id = :txn AND payload_hash = :hash")
+                .param("tenant", tenantId).param("txn", transactionId).param("hash", payloadHash)
                 .update();
     }
 

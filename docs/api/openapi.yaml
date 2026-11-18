@@ -47,7 +47,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '409':
-          description: Same transactionId already screened for this tenant with a different payload (code IDEMPOTENCY_CONFLICT)
+          description: Same transactionId already screened or being screened with a different payload (IDEMPOTENCY_CONFLICT), or a concurrent duplicate still in progress (SCREENING_IN_PROGRESS, retry)
           content:
             application/problem+json:
               schema:
@@ -100,7 +100,7 @@ components:
         example: bank-a
   responses:
     Problem:
-      description: Validation or malformed request (VALIDATION_FAILED, MALFORMED_REQUEST)
+      description: Validation or malformed request (VALIDATION_FAILED, MALFORMED_REQUEST, TIMESTAMP_IN_FUTURE)
       content:
         application/problem+json:
           schema:
@@ -182,8 +182,9 @@ components:
         instance: { type: string }
         code:
           type: string
-          enum: [VALIDATION_FAILED, MALFORMED_REQUEST, UNKNOWN_TENANT, IDEMPOTENCY_CONFLICT, SCREENING_NOT_FOUND,
-                 TENANT_CONFIG_INVALID, SYSTEM_OF_RECORD_UNAVAILABLE, HTTP_ERROR, INTERNAL_ERROR]
+          enum: [VALIDATION_FAILED, MALFORMED_REQUEST, TIMESTAMP_IN_FUTURE, UNKNOWN_TENANT, IDEMPOTENCY_CONFLICT,
+                 SCREENING_IN_PROGRESS, SCREENING_NOT_FOUND, TENANT_CONFIG_INVALID, SYSTEM_OF_RECORD_UNAVAILABLE,
+                 HTTP_ERROR, INTERNAL_ERROR]
         fieldErrors:
           type: array
           items:

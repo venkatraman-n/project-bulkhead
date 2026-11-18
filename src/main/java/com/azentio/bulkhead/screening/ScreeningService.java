@@ -1,6 +1,7 @@
 package com.azentio.bulkhead.screening;
 
 import com.azentio.bulkhead.api.ScreeningRequest;
+import com.azentio.bulkhead.api.error.ApiException;
 import com.azentio.bulkhead.features.FeatureLookup;
 import com.azentio.bulkhead.features.FeatureQuery;
 import com.azentio.bulkhead.features.ResilientFeatureClient;
@@ -13,6 +14,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -34,6 +36,11 @@ import java.util.UUID;
 public class ScreeningService {
 
     private static final Logger log = LoggerFactory.getLogger(ScreeningService.class);
+    /** A claim this old without a decision means its owner died; another request may take over. */
+    static final Duration STALE_CLAIM = Duration.ofSeconds(5);
+    static final Duration DUPLICATE_POLL = Duration.ofMillis(5);
+    /** Future-dated events would prune current velocity history, so they are rejected beyond normal clock skew. */
+    static final Duration MAX_CLOCK_SKEW = Duration.ofMinutes(5);
 
     private final TenantRegistry tenants;
     private final ResilientFeatureClient features;
@@ -58,14 +65,67 @@ public class ScreeningService {
     public ScreeningOutcome screen(String tenantId, ScreeningRequest request) {
         Deadline deadline = Deadline.start(deadlines.budget());
         TenantConfig tenant = tenants.require(tenantId);
+        rejectFutureTimestamp(request);
         String payloadHash = PayloadHash.of(request);
+        String txnId = request.transactionId();
 
         // Fast path for sequential retries: never re-score, never touch the feature store again.
-        Optional<Screening> existing = repository.find(tenantId, request.transactionId());
+        Optional<Screening> existing = repository.find(tenantId, txnId);
         if (existing.isPresent()) {
             return replay(existing.get(), payloadHash);
         }
 
+        // Ownership before any side effect: only the claim owner, on whichever instance, scores this transaction.
+        Instant now = Instant.now();
+        if (!repository.tryClaim(tenantId, txnId, payloadHash, now, now.minus(STALE_CLAIM))) {
+            return awaitOwner(tenantId, txnId, payloadHash);
+        }
+        try {
+            return scoreAndPersist(tenantId, tenant, request, payloadHash, deadline);
+        } catch (RuntimeException failure) {
+            try {
+                repository.releaseClaim(tenantId, txnId, payloadHash);
+            } catch (RuntimeException releaseFailed) {
+                failure.addSuppressed(releaseFailed); // claim expires after STALE_CLAIM anyway
+            }
+            throw failure;
+        }
+    }
+
+    /**
+     * A concurrent duplicate: never score again. A different payload is rejected at once (no feature writes);
+     * the same payload waits for the owner's committed decision and returns it unchanged.
+     */
+    private ScreeningOutcome awaitOwner(String tenantId, String txnId, String payloadHash) {
+        Optional<String> claimHash = repository.findClaimHash(tenantId, txnId);
+        if (claimHash.isPresent() && !claimHash.get().equals(payloadHash)) {
+            throw new IdempotencyConflictException(tenantId, txnId);
+        }
+        long giveUpAt = System.nanoTime() + deadlines.duplicateWait().toNanos();
+        while (System.nanoTime() < giveUpAt) {
+            Optional<Screening> decided = repository.find(tenantId, txnId);
+            if (decided.isPresent()) {
+                return replay(decided.get(), payloadHash);
+            }
+            try {
+                Thread.sleep(DUPLICATE_POLL);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        throw new ScreeningInProgressException(tenantId, txnId);
+    }
+
+    private static void rejectFutureTimestamp(ScreeningRequest request) {
+        if (request.timestamp().isAfter(Instant.now().plus(MAX_CLOCK_SKEW))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "TIMESTAMP_IN_FUTURE",
+                    "timestamp is more than " + MAX_CLOCK_SKEW.toMinutes() + " minutes in the future");
+        }
+    }
+
+    private ScreeningOutcome scoreAndPersist(String tenantId, TenantConfig tenant, ScreeningRequest request,
+                                             String payloadHash, Deadline deadline) {
         Duration featureTimeout = deadline.featureTimeout(deadlines.reserve(), deadlines.maxFeatureTimeout());
         FeatureLookup lookup = features.fetch(featureQuery(tenantId, tenant, request), featureTimeout);
         Evaluation evaluation = ruleEngine.evaluate(tenant, request, lookup.snapshot());
@@ -85,6 +145,7 @@ public class ScreeningService {
             });
             return new ScreeningOutcome(screening, false);
         } catch (DuplicateKeyException lostRace) {
+            // Only reachable after a stale-claim takeover raced a slow original owner; the unique key still decides.
             Screening winner = repository.find(tenantId, request.transactionId()).orElseThrow(() -> lostRace);
             return replay(winner, payloadHash);
         }

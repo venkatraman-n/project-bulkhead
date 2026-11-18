@@ -42,6 +42,7 @@ bulkhead:
     budget-ms: 60                # internal budget inside the 80 ms p99 at the HTTP boundary
     reserve-ms: 15               # kept back for rule evaluation + persistence
     max-feature-timeout-ms: 25   # a feature lookup never gets more than this
+    duplicate-wait-ms: 1000      # concurrent duplicate waits this long for the owner's decision (rare path)
 
 management:
   endpoints:

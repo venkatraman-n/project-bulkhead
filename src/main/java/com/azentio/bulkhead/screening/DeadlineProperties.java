@@ -6,7 +6,7 @@ import java.time.Duration;
 
 /** See docs/architecture/nfr.md for how these split the 80 ms p99 budget. */
 @ConfigurationProperties("bulkhead.deadline")
-public record DeadlineProperties(long budgetMs, long reserveMs, long maxFeatureTimeoutMs) {
+public record DeadlineProperties(long budgetMs, long reserveMs, long maxFeatureTimeoutMs, long duplicateWaitMs) {
 
     Duration budget() {
         return Duration.ofMillis(budgetMs);
@@ -18,5 +18,10 @@ public record DeadlineProperties(long budgetMs, long reserveMs, long maxFeatureT
 
     Duration maxFeatureTimeout() {
         return Duration.ofMillis(maxFeatureTimeoutMs);
+    }
+
+    /** How long a concurrent duplicate waits for the owner's decision before answering SCREENING_IN_PROGRESS. */
+    Duration duplicateWait() {
+        return Duration.ofMillis(duplicateWaitMs);
     }
 }
