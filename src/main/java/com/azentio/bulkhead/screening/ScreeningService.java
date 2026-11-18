@@ -90,6 +90,13 @@ public class ScreeningService {
         }
     }
 
+    /** Investigator read. The tenant is part of the lookup key, so bank-b can never read bank-a's screening. */
+    public Screening find(String tenantId, String transactionId) {
+        tenants.require(tenantId);
+        return repository.find(tenantId, transactionId)
+                .orElseThrow(() -> new ScreeningNotFoundException(tenantId, transactionId));
+    }
+
     private void recordDegraded(String tenantId, TenantConfig tenant, ScreeningRequest request,
                                 Evaluation evaluation, FeatureLookup lookup) {
         Counter.builder("bulkhead.screenings.degraded")
