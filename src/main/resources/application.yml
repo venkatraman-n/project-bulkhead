@@ -34,10 +34,10 @@ bulkhead:
     fault-delay-ms: 0            # >0 adds artificial latency to every lookup (perf degraded mode)
     breaker:
       failure-rate-threshold: 50 # percent of failed/timed-out calls that opens the breaker
-      minimum-calls: 10
-      sliding-window-size: 20
-      wait-in-open-ms: 2000      # then half-open: a few probe calls decide whether to close
-      half-open-calls: 3
+      minimum-calls: 50          # sporadic timeouts (per-request fallback) must not open it; a real outage
+      sliding-window-size: 100   #   (100% failures) still opens it after 50 calls, ~50 ms at 1,000 TPS
+      wait-in-open-ms: 1000      # then half-open: a few probe calls decide whether to close
+      half-open-calls: 5
   deadline:
     budget-ms: 60                # internal budget inside the 80 ms p99 at the HTTP boundary
     reserve-ms: 15               # kept back for rule evaluation + persistence
