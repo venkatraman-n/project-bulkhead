@@ -23,6 +23,8 @@ Targets at the HTTP boundary: **p95 40 ms / p99 80 ms** ([nfr.md](nfr.md)). They
 | **Degraded**: PostgreSQL + Redis, +200 ms injected on every feature lookup | 6,000 (284) | 0 | 6,000 (100%) | 958 req/s | 29.7 / **57.1** / **88.2** ms | 6 / 20 / 43 ms |
 | Baseline: H2 + in-memory features (no Docker hop) | 6,000 (288) | 0 | 25 | 1,829 req/s | 13.0 / **34.5** / **69.0** ms | 3 / 16 / 53 ms |
 
+These runs were taken before the claim-first idempotency fix ([ADR 0002](adr/0002-idempotency-mechanism.md)), which adds one INSERT per new transaction.
+
 `evaluationMs` is measured inside the service from request start to the decision, **before** the INSERT/commit. Client latency is end to end at the HTTP boundary.
 
 Degraded reasons in the normal run (from the WARN log): 248 `TIMEOUT`, 1,380 `CIRCUIT_OPEN`, 5 `NO_BUDGET`. The remaining ~100 degraded responses are replayed duplicates of degraded decisions, which return the stored decision and log nothing new.
@@ -38,7 +40,7 @@ Degraded reasons in the normal run (from the WARN log): 248 `TIMEOUT`, 1,380 `CI
 What the numbers show:
 1. **The deadline works.** With 200 ms injected on every feature lookup, latency is no worse than the normal run, and every request is answered (0 errors, 100% degraded with the bank's policy applied). The slow dependency never reaches the switch.
 2. **Our own code path meets the targets.** Without the Docker hops (baseline), p95 34.5 / p99 69.0 ms on a laptop that is also running the load generator.
-3. **Persistence dominates the p95 gap.** Server-side time before the write stays at p95 20–30 ms in every run. The client-to-server gap is ~18 ms with H2 in-process (34.5 − 16, which covers Tomcat, JSON, localhost and CPU contention), but ~37 ms with PostgreSQL in Docker (57.1 − 20). The extra ~19 ms is the INSERT + commit to PostgreSQL through Docker Desktop's VM network plus WAL flush on a laptop SSD.
+3. **Persistence most likely dominates the p95 gap** (inferred by subtracting aggregate percentiles, not measured per hop). Server-side time before the write stays at p95 20–30 ms in every run. The client-to-server gap is ~18 ms with H2 in-process (34.5 − 16, which covers Tomcat, JSON, localhost and CPU contention), but ~37 ms with PostgreSQL in Docker (57.1 − 20). The extra ~19 ms is the INSERT + commit to PostgreSQL through Docker Desktop's VM network plus WAL flush on a laptop SSD.
 4. **The feature hop is the second cost.** About 4% of Redis lookups (248 of ~5,700) exceeded the 25 ms cap under load, through the same Docker Desktop network. In bursts that pushed the breaker over 50% and short-circuited 1,380 requests (29% degraded in a "healthy" run). The answers stayed fast and correct per policy, but on production hardware this should be near zero.
 
 ## What happened on the way (kept because it changed the design)
