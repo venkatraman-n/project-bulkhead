@@ -1,6 +1,7 @@
 package com.azentio.bulkhead.api;
 
 import com.azentio.bulkhead.support.Payments;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -21,6 +22,11 @@ class ExplanationApiTest {
 
     @Autowired
     MockMvc mvc;
+
+    @BeforeEach
+    void warmUp() throws Exception {
+        screen("bank-a", payment()); // first request in a fresh context pays JIT/class-loading cost inside its budget
+    }
 
     @Test
     void explanation_showsFiredRulesThresholdsObservedValues_versionAndMaskedToken() throws Exception {
