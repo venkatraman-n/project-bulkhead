@@ -2,6 +2,9 @@ package com.azentio.bulkhead.api.error;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -40,6 +43,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ProblemDetail> handleUnreadable(HttpMessageNotReadableException ex) {
         return problem(HttpStatus.BAD_REQUEST, "MALFORMED_REQUEST", "Request body is missing or not valid JSON", null);
+    }
+
+    /**
+     * System of record unreachable or too slow (pool timeout, connection refused, query timeout).
+     * We fail closed rather than return an unpersisted decision: an unrecorded decision could be scored
+     * and counted again on the switch's retry. 503 tells the switch to apply its own fallback.
+     */
+    @ExceptionHandler({DataAccessResourceFailureException.class, TransientDataAccessException.class})
+    public ResponseEntity<ProblemDetail> handleDatabaseUnavailable(DataAccessException ex) {
+        log.error("System of record unavailable: {}", ex.getMessage());
+        return problem(HttpStatus.SERVICE_UNAVAILABLE, "SYSTEM_OF_RECORD_UNAVAILABLE",
+                "Decision could not be recorded; retry or apply the switch fallback", null);
     }
 
     @ExceptionHandler(Exception.class)
