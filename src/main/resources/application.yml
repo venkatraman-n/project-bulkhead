@@ -1,0 +1,35 @@
+# Default profile: zero external dependencies (H2 in PostgreSQL mode + in-memory feature store).
+# Use the "postgres-redis" profile for the real system of record and feature store.
+spring:
+  application:
+    name: bulkhead
+  threads:
+    virtual:
+      enabled: true          # one cheap virtual thread per request; blocking I/O does not exhaust a pool
+  datasource:
+    url: jdbc:h2:mem:bulkhead;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;LOCK_TIMEOUT=10000;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+    hikari:
+      maximum-pool-size: 20  # see docs/architecture/nfr.md (connection-pool sizing)
+      connection-timeout: 250
+  flyway:
+    enabled: true
+
+server:
+  port: 8080
+  shutdown: graceful
+
+bulkhead:
+  tenants:
+    config-dir: config/tenants   # one YAML rule pack per bank; file name = tenant id
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  level:
+    com.azentio.bulkhead: INFO

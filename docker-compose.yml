@@ -1,0 +1,30 @@
+# Starts the system of record (PostgreSQL) and the velocity feature store (Redis).
+#   cp .env.example .env      (then set POSTGRES_PASSWORD)
+#   docker compose up -d
+# Then run the service against them:
+#   mvn spring-boot:run -Dspring-boot.run.profiles=postgres-redis
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bulkhead}
+      POSTGRES_USER: ${POSTGRES_USER:-bulkhead}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bulkhead} -d ${POSTGRES_DB:-bulkhead}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
