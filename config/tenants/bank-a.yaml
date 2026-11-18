@@ -1,0 +1,26 @@
+# bank-a: largest tenant (60% of traffic). Prefers to let payments through when features are missing.
+rulePackVersion: "bank-a-2026.11.18-1"
+rules:
+  amountThreshold:
+    threshold: 10000
+    score: 40
+  highRiskCountry:
+    countries: [IR, KP, SY, MM, AF]
+    score: 50
+  newBeneficiaryHighAmount:
+    amount: 2000
+    score: 35
+  velocity:
+    - id: VELOCITY_10M          # shared baseline with bank-b
+      window: PT10M
+      maxCount: 5
+      score: 40
+    - id: VELOCITY_1H           # bank-a specific: slower burst over an hour
+      window: PT1H
+      maxCount: 20
+      score: 30
+bands:
+  reviewFrom: 40
+  declineFrom: 80
+degradation:
+  policy: FAIL_OPEN

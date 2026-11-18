@@ -1,0 +1,23 @@
+# bank-b: holds large payments for manual review when features are missing.
+rulePackVersion: "bank-b-2026.11.18-1"
+rules:
+  amountThreshold:
+    threshold: 5000
+    score: 40
+  highRiskCountry:
+    countries: [IR, KP, SY]
+    score: 60
+  newBeneficiaryHighAmount:
+    amount: 1000
+    score: 40
+  velocity:
+    - id: VELOCITY_10M          # shared baseline with bank-a
+      window: PT10M
+      maxCount: 5
+      score: 40
+bands:
+  reviewFrom: 40
+  declineFrom: 70
+degradation:
+  policy: REVIEW_ABOVE_AMOUNT
+  amount: 2000

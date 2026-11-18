@@ -1,0 +1,27 @@
+# bank-c: conservative; declines large payments when features are missing.
+rulePackVersion: "bank-c-2026.11.18-1"
+rules:
+  amountThreshold:
+    threshold: 3000
+    score: 45
+  highRiskCountry:
+    countries: [IR, KP, SY, MM, AF, YE]
+    score: 60
+  newBeneficiaryHighAmount:
+    amount: 500
+    score: 40
+  velocity:
+    - id: VELOCITY_5M           # bank-c specific: tight short burst
+      window: PT5M
+      maxCount: 3
+      score: 50
+    - id: VELOCITY_24H          # bank-c specific: daily ceiling
+      window: PT24H
+      maxCount: 30
+      score: 30
+bands:
+  reviewFrom: 35
+  declineFrom: 65
+degradation:
+  policy: DECLINE_ABOVE_AMOUNT
+  amount: 1000
